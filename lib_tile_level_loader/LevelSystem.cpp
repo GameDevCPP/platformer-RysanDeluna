@@ -4,19 +4,35 @@
 using namespace std;
 using namespace sf;
 
-std::map<LevelSystem::Tile, sf::Color> LevelSystem::_colours{
+std::map<LevelSystem::Tile, sf::Color> LevelSystem::_fillcolours{
     {WALL, Color::White}, {END, Color::Red}};
 
+std::map<LevelSystem::Tile, sf::Color> LevelSystem::_edgecolours{
+    {EMPTY, sf::Color(50,50,50)}, {WALL, sf::Color::White}, {END, sf::Color(100,0,0)}, {START, sf::Color(50,50,50)},
+    {ENEMY, sf::Color(50,50,50)}, {WAYPOINT, sf::Color(50,50,50)}};
+
 sf::Color LevelSystem::getColor(LevelSystem::Tile t) {
-  auto it = _colours.find(t);
-  if (it == _colours.end()) {
-    _colours[t] = Color::Transparent;
+  auto it = _fillcolours.find(t);
+  if (it == _fillcolours.end()) {
+    _fillcolours[t] = Color::Transparent;
   }
-  return _colours[t];
+  return _fillcolours[t];
+}
+
+sf::Color LevelSystem::getEdgeColor(LevelSystem::Tile t){
+  auto it = _edgecolours.find(t);
+  if (it == _edgecolours.end())
+    _edgecolours[t] = Color::Transparent;
+  return _edgecolours[t];
 }
 
 void LevelSystem::setColor(LevelSystem::Tile t, sf::Color c) {
-  _colours[t] = c;
+  _fillcolours[t] = c;
+}
+
+void LevelSystem::setEdgeColor(LevelSystem::Tile t, sf::Color c)
+{
+  _edgecolours[t] = c;
 }
 
 std::unique_ptr<LevelSystem::Tile[]> LevelSystem::_tiles;
@@ -28,8 +44,7 @@ Vector2f LevelSystem::_offset(0.0f, 30.0f);
 // Vector2f LevelSystem::_offset(0,0);
 vector<std::unique_ptr<sf::RectangleShape>> LevelSystem::_sprites;
 
-void LevelSystem::loadLevelFile(const std::string& path, float tileSize) {
-  _tileSize = tileSize;
+void LevelSystem::loadLevelFile(const std::string& path, float window_size) {
   size_t w = 0, h = 0;
   string buffer;
 
@@ -54,6 +69,7 @@ void LevelSystem::loadLevelFile(const std::string& path, float tileSize) {
       if (w == 0) {  // if we haven't written width yet
         w = i;       // set width
       } else if (w != (widthCheck - 1)) {
+        std::cout << "non uniform width" << endl;
         throw string("non uniform width:" + to_string(h) + " ") + path;
       }
       widthCheck = 0;
@@ -70,6 +86,7 @@ void LevelSystem::loadLevelFile(const std::string& path, float tileSize) {
   _tiles = std::make_unique<Tile[]>(w * h);
   _width = w; // set static class vars
   _height = h;
+  _tileSize = window_size/float(_width);
   std::copy(temp_tiles.begin(), temp_tiles.end(), &_tiles[0]);
   cout << "Level " << path << " Loaded. " << w << "x" << h << std::endl;
   buildSprites();
@@ -82,16 +99,20 @@ void LevelSystem::buildSprites(bool optimise) {
     sf::Vector2f p;
     sf::Vector2f s;
     sf::Color c;
+    sf::Color edge;
   };
   vector<tp> tps;
+  vector<tp> e_tps;
   const auto tls = Vector2f(_tileSize, _tileSize);
   for (size_t y = 0; y < _height; ++y) {
     for (size_t x = 0; x < _width; ++x) {
       Tile t = getTile({x, y});
-      if (t == EMPTY) {
-        continue;
-      }
-      tps.push_back({getTilePosition({x, y}), tls, getColor(t)});
+      if (t == EMPTY)
+      {
+        e_tps.push_back({getTilePosition({x,y}), tls, getColor(t), getEdgeColor(t)});
+      } //else if (t == WAYPOINT) e_tps.push_back({{getTilePosition({x,y}) + Vector2f(_tileSize * 0.25, _tileSize * 0.25)},
+        // Vector2f(_tileSize *0.5, _tileSize * 0.5), getColor(t), getEdgeColor(t)});
+      else tps.push_back({getTilePosition({x, y}), tls, getColor(t), getEdgeColor(t)});
     }
   }
 
@@ -161,10 +182,22 @@ void LevelSystem::buildSprites(bool optimise) {
     auto s = make_unique<sf::RectangleShape>();
     s->setPosition(t.p);
     s->setSize(t.s);
-    s->setFillColor(Color::Red);
     s->setFillColor(t.c);
+    s->setOutlineColor(t.edge);
+    s->setOutlineThickness(-0.5f);
     // s->setFillColor(Color(rand()%255,rand()%255,rand()%255));
-    _sprites.push_back(move(s));
+    _sprites.push_back(std::move(s));
+  }
+
+  for (auto& t : e_tps)
+  {
+    auto s = make_unique<sf::RectangleShape>();
+    s->setPosition(t.p);
+    s->setSize(t.s);
+    s->setFillColor(t.c);
+    s->setOutlineColor(t.edge);
+    s->setOutlineThickness(-0.5f);
+    _sprites.push_back(std::move(s));
   }
 
   cout << "Level with " << (_width * _height) << " Tiles, With " << nonempty
@@ -179,8 +212,8 @@ void LevelSystem::render(RenderWindow& window) {
 
 LevelSystem::Tile LevelSystem::getTile(sf::Vector2ul p) {
   if (p.x > _width || p.y > _height) {
-    throw string("Tile out of range: ") + to_string(p.x) + "," +
-        to_string(p.y) + ")";
+    cout << "TILE OUT OF RANGE: " << p.x << "," << p.y << endl;
+    throw "";
   }
   return _tiles[(p.y * _width) + p.x];
 }
@@ -210,6 +243,12 @@ LevelSystem::Tile LevelSystem::getTileAt(Vector2f v) {
     throw string("Tile out of range ");
   }
   return getTile(Vector2ul((v - _offset) / (_tileSize)));
+}
+
+sf::Vector2ul LevelSystem::getTileCoord(Vector2f v) {
+  auto a = v - _offset;
+  if (a.x < 0 || a.y < 0) { std::cout << "TILE OUT OF RANGE!!" << std::endl; }
+  return Vector2ul((v - _offset) / _tileSize);
 }
 
 bool LevelSystem::isOnGrid(sf::Vector2f v) {

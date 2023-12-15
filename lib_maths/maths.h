@@ -6,6 +6,8 @@
 #include <iostream> // std::cout, std::fixed
 #include <sstream>
 #include <vector>
+#include <cstdint>
+
 
 namespace sf {
 
@@ -47,6 +49,11 @@ template <typename T, typename U> Vector2<T> Vcast(const Vector2<U>& v) {
   return Vector2<T>(static_cast<T>(v.x), static_cast<T>(v.y));
 };
 
+// TODO: check what this function should actually do
+// Just a casting to avoid errors during Compilation
+template <typename T>
+double degrees(T deg) { return (double)deg; }
+
 static double deg2rad(double degrees) {
   return degrees * 4.0 * atan(1.0) / 180.0;
 }
@@ -78,4 +85,13 @@ std::string toStrDecPt(const uint16_t& dp, const T& i) {
   std::stringstream stream;
   stream << std::fixed << std::setprecision(dp) << i;
   return stream.str();
+}
+
+// In order to implement the unordered_map
+namespace std {
+    template <> struct hash<sf::Vector2ul> {
+        std::size_t operator()(const sf::Vector2ul& id) const noexcept {
+          return std::hash<unsigned long>()(id.x ^ (id.y << 16));
+        }
+    };
 }
